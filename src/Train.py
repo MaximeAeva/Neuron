@@ -7,7 +7,7 @@ from Display import *
 
 
 p = 1
-X, Y, X_test, Y_test = LoadDataSet ("OceaniqueAquitain", param, [25, 2000], 0.8)
+X, Y, X_test, Y_test = LoadDataSet ("OceaniqueAquitain", param, [25, 1000], 0.8)
 
 mX, sX = normnreduc(X, len(param))
 mY, sY = normnreduc(Y, len(param))

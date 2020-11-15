@@ -355,9 +355,9 @@ def update_parameters_with_adam(parameters, grads, v, s, t, learning_rate = 0.01
 
         # Compute bias-corrected first moment estimate. Inputs: "v, beta1, t". Output: "v_corrected".
         ### START CODE HERE ### (approx. 2 lines)
-        v_corrected["dW" + str(l+1)] = v["dW" + str(l+1)]/(1-pow(beta1, 2))
-        v_corrected["dbeta" + str(l+1)] = v["dbeta" + str(l+1)]/(1-pow(beta1, 2))
-        v_corrected["dgamma" + str(l+1)] = v["dgamma" + str(l+1)]/(1-pow(beta1, 2))
+        v_corrected["dW" + str(l+1)] = v["dW" + str(l+1)]/(1-pow(beta1, t))
+        v_corrected["dbeta" + str(l+1)] = v["dbeta" + str(l+1)]/(1-pow(beta1, t))
+        v_corrected["dgamma" + str(l+1)] = v["dgamma" + str(l+1)]/(1-pow(beta1, t))
         ### END CODE HERE ###
 
         # Moving average of the squared gradients. Inputs: "s, grads, beta2". Output: "s".
@@ -369,9 +369,9 @@ def update_parameters_with_adam(parameters, grads, v, s, t, learning_rate = 0.01
 
         # Compute bias-corrected second raw moment estimate. Inputs: "s, beta2, t". Output: "s_corrected".
         ### START CODE HERE ### (approx. 2 lines)
-        s_corrected["dW" + str(l+1)] = s["dW" + str(l+1)]/(1-pow(beta2, 2))
-        s_corrected["dbeta" + str(l+1)] = s["dbeta" + str(l+1)]/(1-pow(beta2, 2))
-        s_corrected["dgamma" + str(l+1)] = s["dgamma" + str(l+1)]/(1-pow(beta2, 2))
+        s_corrected["dW" + str(l+1)] = s["dW" + str(l+1)]/(1-pow(beta2, t))
+        s_corrected["dbeta" + str(l+1)] = s["dbeta" + str(l+1)]/(1-pow(beta2, t))
+        s_corrected["dgamma" + str(l+1)] = s["dgamma" + str(l+1)]/(1-pow(beta2, t))
         ### END CODE HERE ###
 
         # Update parameters. Inputs: "parameters, learning_rate, v_corrected, s_corrected, epsilon". Output: "parameters".
