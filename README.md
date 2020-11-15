@@ -3,10 +3,10 @@
 
 Welcome there !
 
-![Hey!](https://github.com/MaximeAeva/Neuron/blob/master/res/hello.PNG)
+![Hey!](https://github.com/MaximeAeva/Neuron/blob/master/res/hello.png)
 
 The result (orange) on weather data (blue)
-![Result!](https://github.com/MaximeAeva/Neuron/blob/master/res/solution.PNG)
+![Result!](https://github.com/MaximeAeva/Neuron/blob/master/res/solution.png)
 
 ## Installation
 Windows:
