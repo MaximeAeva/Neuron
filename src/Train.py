@@ -20,7 +20,7 @@ q = 100*(np.ones((5, 1)))
 attempt = 0
 cost_vector = []
 
-while (abs(q[0])>2):
+while (abs(q[0])>2.5):
     attempt = attempt + 1
     print ("tentative = " +str(attempt))
     kprob = np.random.rand()*0.1+0.9

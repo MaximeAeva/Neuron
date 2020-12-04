@@ -641,6 +641,7 @@ for i in range(1):
         
     cost, dAL = cost(forward["A"+str(len(layers)-1)], Y, mode = 'SEL')
     backward["dA"+str(len(layers)-1)] = dAL
+    print(cost)
     
     for l in reversed(range(1, len(layers))):     
         dA, dW, dgamma, dbeta = backward_function(backward["dA"+str(l)],

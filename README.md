@@ -1,12 +1,17 @@
 # Neuron
-> A CUDA boosted CNN implementation
+> A CUDA boosted CNN implementation from scratch
 
-Welcome there !
+I used weather data (temperature, pression, rain, wind ...) to build and test my neural network.
 
-![Hey!](https://github.com/MaximeAeva/Neuron/blob/master/res/hello.png)
+Thereafter a gif pointing out the training session (each image are separated by 1000 epochs)
 
-The result (orange) on weather data (blue)
+![Hey!](https://github.com/MaximeAeva/Neuron/blob/master/res/hello.gif)
+
+The result (orange) on weather temperature data (blue)
+
 ![Result!](https://github.com/MaximeAeva/Neuron/blob/master/res/solution.png)
+
+This neural network can predict temperature within an interval below +- 2°C.
 
 ## Installation
 Windows:
@@ -14,6 +19,9 @@ Windows:
 ```console
 git clone
 ```
+Then run train.py will train different network architecture until it find one below your specified accuracy.
+CUDA neural network is not complete for now (in fact, neural network is, but CNN isn't).
+Tests tend to forecast a x30 computational speed improvement !
 
 ## Usage example
 

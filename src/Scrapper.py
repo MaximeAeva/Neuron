@@ -65,7 +65,7 @@ def LoadDataSet (cle, param, size, train = 0.7):
     content={} 
     for parm in param:
         '''Open .html from computer'''
-        page = codecs.open("data/"+cle+parm+".html", 'r', 'utf-8')
+        page = codecs.open("../data/"+cle+parm+".html", 'r', 'utf-8')
         
         ''' Creating the soup'''
         soup = BeautifulSoup(page, 'html.parser')    
