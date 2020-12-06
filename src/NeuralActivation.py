@@ -54,6 +54,6 @@ def relu(z):
 
 def relu_backward(dA, z):  
     dz = cp.array(dA, copy=True)  
-    dz[z <= 0] = 0
+    dz = cp.maximum(0, dz)
     return dz
 

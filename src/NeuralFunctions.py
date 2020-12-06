@@ -3,6 +3,7 @@ import cupy as cp
 import math
 import time 
 from NeuralActivation import activation
+from Functions import *
 
 def initialize_parameters_he(in_dim, out_dim):
     '''
@@ -36,6 +37,31 @@ def initialize_parameters_he(in_dim, out_dim):
     sigma = cp.zeros((out_dim, 1))
     
     return W, gamma, beta, mu, sigma
+
+def initialize_parameters_he_conv(f, depth, filter_number):
+    '''
+    Initialize filter and bias for convolution
+
+    Parameters
+    ----------
+    f : int
+        Filter size.
+    depth : int
+        Filter depth.
+    filter_number : int
+        Number of filter in the layer
+
+    Returns
+    -------
+    Filter : cp.array(f, f, depth, number_filter)
+        Filter for convolution.
+    bias : cp.array(1, 1, 1, number_filter)
+        Filter bias
+    '''
+    Filter = cp.random.randn(f, f, depth, filter_number)*cp.sqrt(2/(f**2))
+    bias = cp.zeros((1, 1, 1, filter_number))
+    
+    return Filter, bias
 
 def initialize_adam(W, beta, gamma) :
     '''
@@ -76,36 +102,72 @@ def initialize_adam(W, beta, gamma) :
     
     return vdW, vdgamma, vdbeta, sdW, sdgamma, sdbeta
 
-def random_mini_batches(X, Y, mini_batch_size = 64):
+def initialize_adam_conv(Filter, bias) :
+    '''
+    Initialize Adam optimizer variables for a function layer
+
+    Parameters
+    ----------
+    Filter : cp.array(f, f, depth, filter_number)
+        filter vector of volume
+    bias : cp.array(1, 1, 1, filter_number)
+        Bias matrix.
+
+    Returns
+    -------
+    vdFilter : cp.array(Filter)
+        Moving average of dFilter.
+    vdbias : cp.array(bias)
+        Moving average of dbias.
+    sdFilter :  cp.array(Filter)
+        Moving average of squared dFilter.
+    sdbias : cp.array(bias)
+        Moving average of squared dbias.
+
+    '''
+    vdFilter = cp.zeros((Filter.shape[0], Filter.shape[1], 
+                         Filter.shape[2], Filter.shape[3]))
+    vdbias = cp.zeros((bias.shape[0], bias.shape[1], 
+                         bias.shape[2], bias.shape[3]))
+    sdFilter = cp.zeros((Filter.shape[0], Filter.shape[1], 
+                         Filter.shape[2], Filter.shape[3]))
+    sdbias = cp.zeros((bias.shape[0], bias.shape[1], 
+                         bias.shape[2], bias.shape[3]))
+
+    
+    return vdFilter, vdbias, sdFilter, sdbias
+
+def random_mini_batches(X, Y, mini_batch_size = 64, seed = 0):
     '''
     Splite training data into multiple mini_batches
 
     Parameters
     ----------
-    X : cp.array(features_in, examples)
+    X : cp.array(examples, features_in)
         Input dataset.
     Y : cp.array(features_out, examples)
         Output target.
     mini_batch_size : int (a power of 2), optional
         Size of a batch. The default is 64.
-
+    seed : int
+        Caring about random function behaviour
     Returns
     -------
     mini_batches : cp.list of tuple (X, Y)
-        A list of batches which the given size.
+        A list of batches with the given size.
 
     '''
-    m = X.shape[1]
+    np.random.seed(seed)
+    m = X.shape[0]
     mini_batches = []
-    
-    permutation = list(cp.random.permutation(m))
-    shuffled_X = X[:, permutation]
+    permutation = list(np.random.permutation(m))
+    shuffled_X = X[permutation, :, :, :]
     shuffled_Y = Y[:, permutation]
 
     num_complete_minibatches = math.floor(m/mini_batch_size) 
     for k in range(0, num_complete_minibatches):
 
-        mini_batch_X = shuffled_X[:, k*mini_batch_size : (k+1)*mini_batch_size]
+        mini_batch_X = shuffled_X[k*mini_batch_size : (k+1)*mini_batch_size, :, :, :]
         mini_batch_Y = shuffled_Y[:, k*mini_batch_size : (k+1)*mini_batch_size]
 
         mini_batch = (mini_batch_X, mini_batch_Y)
@@ -348,7 +410,9 @@ def backward_function(dA_previous, A_previous, D, Z, z, zhat, gamma, beta, W, mu
     dZ = (dzhat/sigma)+(dsigma*(1/m)*(2*(Z-mu)))+((1/m)*dmu)
     dW = 1./m * cp.dot(Z, A_previous.T)
     dA = cp.dot(W.T, dZ)
-    dA= dA*D
+    print(dA.shape)
+    print(D.shape)
+    dA = dA*D
     dA = dA/dropout
     
     
@@ -593,7 +657,287 @@ def update_parameters_with_adam(W, gamma, beta, dW, dgamma, dbeta,
 
     return W, gamma, beta, vdW, vdgamma, vdbeta, sdW, sdgamma, sdbeta
 
+def update_parameters_with_adam_conv(Filter, bias, dFilter, dbias,
+                                vdFilter, vdbias, sdFilter, sdbias,
+                                t, learning_rate = 0.01,
+                                beta1 = 0.9, beta2 = 0.999,  epsilon = 1e-8):
+    '''
+    
 
+    Parameters
+    ----------
+    Filter : cp.array(f, f, depth, filter_number)
+        Filters
+    bias : cp.array(1, 1, 1, filter_number)
+        Bias matrix.
+    dFilter : cp.array(f, f, depth, filter_number)
+        Filters matrix derivative.
+    dbias : cp.array(1, 1, 1, filter_number)
+        Bias matrix derivative.
+    vdFilter : cp.array(f, f, depth, filter_number)
+        Derivative moving average Filters matrix.
+    vdbias : cp.array(1, 1, 1, filter_number)
+        Derivative moving average bias matrix.
+    sdFilter : cp.array(f, f, depth, filter_number)
+        Squared derivative moving average Filters matrix.
+    sdbias : cp.array(1, 1, 1, filter_number)
+        Squared derivative moving average bias matrix.
+    t : int
+        Power Adam evolution.
+    learning_rate : float, optional
+        Length of each step. The default is 0.01.
+    beta1 : float, optional
+        Moving average parameter. The default is 0.9.
+    beta2 : float, optional
+        Moving average parameter. The default is 0.999.
+    epsilon : float, optional
+        Ensure non zeros division. The default is 1e-8.
+
+    Returns
+    -------
+    Filter : cp.array(f, f, depth, filter_number)
+        Updated filter matrix.
+    bias : cp.array(1, 1, 1, filter_number)
+        Updated bias matrix.
+    vdFilter : cp.array(f, f, depth, filter_number)
+        Updated derivative moving average filter matrix.
+    vdbias : cp.array(1, 1, 1, filter_number)
+        Updated derivative moving average bias matrix.
+    sdFilter : cp.array(f, f, depth, filter_number)
+        Updated squared derivative moving average filter matrix.
+    sdbias : cp.array(1, 1, 1, filter_number)
+        Updated squared derivative moving average bias matrix.
+
+    '''  
+
+    vdFilter = beta1*vdFilter+(1-beta1)*dFilter
+    vdbias = beta1*vdbias+(1-beta1)*dbias
+
+    v_cdFilter= vdFilter/(1-pow(beta1, t))
+    v_cdbias = vdbias/(1-pow(beta1, t))
+
+    sdFilter = beta2*sdFilter+(1-beta2)*pow(dFilter, 2)
+    sdbias = beta2*sdbias+(1-beta2)*pow(dbias, 2)
+
+    s_cdFilter = sdFilter/(1-pow(beta2, t))
+    s_cdbias = sdbias/(1-pow(beta2, t))
+
+    Filter = Filter-learning_rate*(v_cdFilter/(cp.sqrt(s_cdFilter)+epsilon))
+    bias = bias-learning_rate*(v_cdbias/(cp.sqrt(s_cdbias)+epsilon))
+
+
+    return Filter, bias, vdFilter, vdbias, sdFilter, sdbias
+
+AlexNet = (('input', (224, 224, 3)),
+           ('conv', (8, 3, 96, 0, 4)),('pool', (3, 2), 'max'), 
+           ('conv', (5, 96, 256, 2, 0)), ('pool', (3, 2), 'max'), 
+           ('conv', (3, 256, 384, 1, 0)), ('conv', (3, 384, 384, 1, 0)), 
+           ('conv', (3, 384, 256, 1, 0)), ('pool', (3, 2)), 
+           ('flatten', 9216), 
+           ('dense', 4096, 'relu'), ('dense', 4096, 'relu'),
+           ('dense', 1000, 'relu'), 
+           ('dense', 10, 'identity'))
+
+LeNet = (('input', (28, 28, 3)), 
+         ('conv', (5, 3, 6, 2, 1)), ('pool', (2, 2), 'mean'),
+         ('conv', (5, 6, 16, 0, 1)), ('pool', (2, 2), 'mean'), 
+         ('flatten', 400), 
+         ('dense', 120, 'relu'), ('dense', 84, 'relu'),
+         ('dense', 10, 'identity'))
+
+def CNN(X, Y, layers, learning_rate = 0.7, mini_batch_size = 64, beta = 0.9,
+          beta1 = 0.9, beta2 = 0.999,  epsilon = 1e-8, num_epochs = 10000, 
+          keep_prob = 0.5, print_cost = True, pourcentageStop = 0.1, cost_mode = 'SEL', log = True):
+    """
+    Modelize the designed CNN.
+    
+    Arguments:
+    X -- input data, of shape (height, width, depth, number of examples)
+    Y -- shape (number of possible results, number of examples)
+    layers -- python list, fill with layers parameters
+    learning_rate -- the learning rate, scalar.
+    mini_batch_size -- the size of a mini batch
+    beta -- Momentum hyperparameter
+    beta1 -- Exponential decay hyperparameter for the past gradients estimates 
+    beta2 -- Exponential decay hyperparameter for the past squared gradients estimates 
+    epsilon -- hyperparameter preventing division by zero in Adam updates
+    num_epochs -- number of epochs
+    print_cost -- True to print the cost every 1000 epochs
+
+    Returns:
+    parameters -- python dictionary containing your updated parameters 
+    """
+
+    seed = 0
+    L = len(layers)-1             # number of layers in the neural networks
+    costs = 0                       # to keep track of the cost
+    t = 0                            # initializing the counter required for Adam update   
+    m = X.shape[0]                   # number of training examples
+    
+    # Initialize parameters
+    parameters = {}
+    adam = {}
+    for l in range(1, len(layers)):
+        if(layers[l][0] == 'conv'):
+            W, beta = initialize_parameters_he_conv(layers[l][1][0], 
+                                                         layers[l][1][1], 
+                                                         layers[l][1][2])
+            vdW, vdbeta, sdW, sdbeta = initialize_adam_conv(W, beta)
+        if(layers[l][0] == 'dense'):
+            W, gamma, beta, mu, sigma = initialize_parameters_he(layers[l-1][1], 
+                                                                 layers[l][1])
+            vdW, vdgamma, vdbeta, sdW, sdgamma, sdbeta = initialize_adam(W, 
+                                                                         beta, 
+                                                                         gamma)
+            parameters["gamma"+str(l)] = gamma
+            parameters["mu"+str(l)] = mu
+            parameters["sigma"+str(l)] = sigma
+            adam["vdgamma"+str(l)] = vdgamma
+            adam["sdgamma"+str(l)] = sdgamma
+            
+            
+        parameters["W"+str(l)] = W
+        parameters["beta"+str(l)] = beta
+        adam["vdW"+str(l)] = vdW
+        adam["vdbeta"+str(l)] = vdbeta
+        adam["sdW"+str(l)] = sdW
+        adam["sdbeta"+str(l)] = sdbeta
+        
+
+    x = []
+    fpa_cache = []
+    deg = 4
+    # Optimization loop
+    for i in range(num_epochs):
+        
+        seed = seed + 1
+        minibatches = random_mini_batches(X, Y, mini_batch_size, seed)
+        cost_total = 0
+        
+        # Select a minibatch
+        for minibatch in minibatches:
+            cache = {}
+            (minibatch_X, minibatch_Y) = minibatch
+            cache["A0"] = minibatch_X
+            
+            # Forward propagation
+            for l in range(1, len(layers)):
+                if(layers[l][0] == 'conv'):
+                    cache["A"+str(l)] = forward_conv(cache["A"+str(l-1)], 
+                                                     parameters["W"+str(l)], 
+                                     parameters["beta"+str(l)], 
+                                     layers[l][1][3],  layers[l][1][4])
+                if(layers[l][0] == 'pool'):
+                    cache["A"+str(l)] = forward_pool(cache["A"+str(l-1)], 
+                                     layers[l][1][1], layers[l][1][0],
+                                     layers[l][2])
+                if(layers[l][0] == 'dense'):
+                    cache["A"+str(l)], cache["z"+str(l)], cache["zhat"+str(l)], cache["Z"+str(l)], parameters["mu"+str(l)], parameters["sigma"+str(l)], cache["D"+str(l)] = forward_function(cache["A"+str(l-1)], 
+                        parameters["W"+str(l)], parameters["mu"+str(l)],
+                        parameters["sigma"+str(l)], parameters["gamma"+str(l)], 
+                        parameters["beta"+str(l)], layers[l][2], keep_prob)
+                if(layers[l][0] == 'flatten'):
+                    cache["A"+str(l)] = cp.reshape(cache["A"+str(l-1)], 
+                                   (cache["A"+str(l-1)].shape[1]*
+                                    cache["A"+str(l-1)].shape[2]*
+                                    cache["A"+str(l-1)].shape[3],
+                                    cache["A"+str(l-1)].shape[0]))
+                print("A%d: %s" %(l, str(cache["A"+str(l)].shape)))
+            # Compute cost and add to the cost total
+            costs, cache["dA"+str(L)] = cost(cache["A"+str(L)],
+                                                minibatch_Y, cost_mode)
+            
+            cost_total += cp.sum(abs(costs))
+            print(cost_total)
+
+            # Backward propagation
+            for l in reversed(range(0, len(layers)-1)):
+                print("dA%d: %s" %(l+1, str(cache["dA"+str(l+1)].shape)))
+                if(layers[l][0] == 'conv'):
+                    cache["dA"+str(l)], cache["dFilter"+str(l)], cache["dbias"+str(l)] = backward_conv(cache["dA"+str(l+1)],
+                                cache["A"+str(l+1)], parameters["W"+str(l+1)], 
+                                parameters["beta"+str(l+1)], 
+                                layers[l+1][1][3],  layers[l+1][1][4])
+                if(layers[l][0] == 'pool'):
+                    cache["dA"+str(l)] = backward_pool(cache["dA"+str(l+1)], 
+                                     cache["A"+str(l+1)], layers[l+1][1][1], 
+                                     layers[l+1][1][0], layers[l+1][2])
+                if(layers[l][0] == 'dense'):
+                    cache["dA"+str(l)], cache["dW"+str(l)], cache["dgamma"+str(l)], cache["dbeta"+str(l)] = backward_function(cache["dA"+str(l+1)], 
+                        cache["A"+str(l+1)], cache["D"+str(l+1)], cache["Z"+str(l+1)],
+                        cache["z"+str(l+1)], cache["zhat"+str(l+1)], 
+                        parameters["gamma"+str(l+1)], parameters["beta"+str(l+1)],
+                        parameters["W"+str(l+1)], parameters["mu"+str(l+1)], 
+                        parameters["sigma"+str(l+1)], layers[l+1][2], keep_prob)
+                if(layers[l][0] == 'flatten'):
+                    cache["dA"+str(l)] = cp.reshape(cache["dA"+str(l+1)], 
+                                   cache["A"+str(l-1)].shape)
+                
+            
+            # Update parameters
+            t = t + 1 # Adam counter
+            for l in range(1, len(layers)):
+                if(layers[l][0] == 'conv'):
+                    parameters["W"+str(l)], parameters["beta"+str(l)], 
+                    adam["vdW"+str(l)], adam["vdbeta"+str(l)], adam["sdW"+str(l)], 
+                    adam["sdbeta"+str(l)] = update_parameters_with_adam_conv(parameters["W"+str(l)], 
+                                 parameters["beta"+str(l)], cache["dW"+str(l)], 
+                                 cache["dbeta"+str(l)], adam["vdW"+str(l)], 
+                                 adam["vdbeta"+str(l)], adam["sdW"+str(l)], 
+                                 adam["sdbeta"+str(l)], t, learning_rate, 
+                                 beta1, beta2, epsilon)
+                if(layers[l][0] == 'dense'):
+                    parameters["W"+str(l)], parameters["gamma"+str(l)],
+                    parameters["beta"+str(l)], adam["vdW"+str(l)], 
+                    adam["vdgamma"+str(l)], adam["vdbeta"+str(l)], 
+                    adam["sdW"+str(l)], adam["sdgamma"+str(l)], 
+                    adam["sdbeta"+str(l)] = update_parameters_with_adam(parameters["W"+str(l)],
+                                parameters["gamma"+str(l)], parameters["beta"+str(l)],
+                                cache["dW"+str(l)], cache["dgamma"+str(l)], 
+                                cache["dbeta"+str(l)], adam["vdW"+str(l)],
+                                adam["vdgamma"+str(l)], adam["vdbeta"+str(l)],
+                                adam["sdW"+str(l)], adam["sdgamma"+str(l)],
+                                adam["sdbeta"+str(l)], t, learning_rate, 
+                                beta1, beta2, epsilon)
+          
+        # Break if cost derivative trend is flat
+        if log:
+            cost_avg = np.log10(1+(cost_total / m))
+        else:
+            cost_avg = cost_total / m
+        
+        
+        # Print the cost every 1000 epoch
+        if print_cost and i % 10 == 0:
+            print ("Cost after epoch %i: %f" %(i, cost_avg))
+        if print_cost and i % 100 == 0:
+            costs.append(cost_avg)
+            x.append(i/100)
+        if len(x)>15:
+            A, ls, Val = leastSquare(x, costs, deg)
+            fpa, y = tangente(A, len(x)-10, Val, deg)
+            fpa_cache.append(abs(fpa))
+            if pourcentageStop*np.asarray(fpa_cache).max()>fpa_cache[len(fpa_cache)-1]:
+                break
+                
+    # plot the cost
+    plt.figure
+    plt.plot(costs)
+    plt.plot(ls)
+    plt.plot(y)
+    plt.ylabel('cost')
+    plt.xlabel('epochs (per 100)')
+    plt.title("Learning rate = " + str(learning_rate))
+    plt.show()
+    plt.close
+
+    return parameters
+   
+X = cp.ones((128, 28, 28, 3))
+Y = cp.ones((10, 128))
+
+CNN(X, Y, LeNet)
+'''
 for i in range(1):
     
     Y = cp.random.rand(50, 128)
@@ -625,7 +969,16 @@ for i in range(1):
         F = cp.array([[-1, 0, 1],[-1, 0, 1],[-1, 0, 1]])[:, :,  cp.newaxis,  cp.newaxis]
         B = 10*cp.ones((1, 1, 1, 1))
         H = forward["A0"][cp.newaxis, :, :, cp.newaxis]
-        Q = forward_conv(H, F, B, 3, 3)   
+        Q = forward_conv(H, F, B, 3, 3)
+        P = forward_pool(Q, 3, 3)
+        QS = forward_conv(P, F, B, 3, 3)
+        PS = forward_pool(QS, 3, 3)
+        if(l == 1) :
+            print("H: %s" %(str(H.shape)))    
+            print("Q: %s" %(str(Q.shape)))
+            print("P: %s" %(str(P.shape)))    
+            print("QS: %s" %(str(QS.shape)))
+            print("PS: %s" %(str(PS.shape)))    
         A, z, zhat, Z, mu, sigma, D = forward_function(forward["A"+str(l-1)], 
                                                        parameters["W"+str(l)], parameters["mu"+str(l)], 
                                                        parameters["sigma"+str(l)], parameters["gamma"+str(l)], 
@@ -659,3 +1012,5 @@ for i in range(1):
                                 beta1 = 0.9, beta2 = 0.999,  epsilon = 1e-8)
         
         backward["dA"+str(l-1)] = dA
+        
+'''
