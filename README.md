@@ -11,7 +11,7 @@ The result (orange) on temperature data (blue)
 
 ![Result!](https://github.com/MaximeAeva/Neuron/blob/master/res/solution.png)
 
-This neural network can predict temperature within an interval behind +- 2°C.
+This neural network can predict temperature within an interval below +- 2°C.
 
 This neural network points out that it is really difficult to predict wind direction as it is almost a random function.
 The same thing appear for rain since levels are almost bolean and my output function is a sigmoid.
@@ -20,8 +20,12 @@ Despite these problems, this works really well on temperature and pression.
 
 My own thought is, weather forecast will always be better forecast from model (as it rely on differential equation).
 
+More about sources [Here](https://github.com/MaximeAeva/Neuron/blob/master/src/README.md)
+
+More about Neural style transfert on tensorflow [here](https://github.com/MaximeAeva/NST)
+
 ## About
-When training, CNN display information regarding it's work
+When training, CNN display information regarding its work
 ```console
 ----------Forward prop----------
 A1: (64, 28, 28, 6)

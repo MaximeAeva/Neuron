@@ -1,10 +1,12 @@
 import numpy as np
 import cupy as cp
 import math
-import time 
 from NeuralActivation import activation
-from Functions import *
 from timeit import default_timer as timer
+from dask.distributed import Client
+
+client = Client(n_workers=4)
+client.close()
 
 def initialize_parameters_he(in_dim, out_dim):
     '''
@@ -735,7 +737,7 @@ AlexNet = (('input', (224, 224, 3)),
            ('flatten', 9216), 
            ('dense', 4096, 'relu'), ('dense', 4096, 'relu'),
            ('dense', 1000, 'relu'), 
-           ('dense', 10, 'identity'))
+           ('dense', 10, 'sigmoid'))
 
 LeNet = (('input', (28, 28, 3)), 
          ('conv', (5, 3, 6, 2, 1)), ('pool', (2, 2), 'max'),
@@ -957,7 +959,7 @@ def train_CNN(X, Y, layers, learning_rate = 0.7, mini_batch_size = 64, beta = 0.
 '''
     return parameters
    
-X = cp.random.rand(10000, 28, 28, 1)
+X = cp.random.rand(10000, 28, 28, 3)
 Y = cp.random.rand(10, 10000)
 
 train_CNN(X, Y, LeNet)
