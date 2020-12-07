@@ -4,6 +4,7 @@ import math
 import time 
 from NeuralActivation import activation
 from Functions import *
+from timeit import default_timer as timer
 
 def initialize_parameters_he(in_dim, out_dim):
     '''
@@ -741,7 +742,7 @@ LeNet = (('input', (28, 28, 3)),
          ('conv', (5, 6, 16, 0, 1)), ('pool', (2, 2), 'max'), 
          ('flatten', 400), 
          ('dense', 120, 'relu'), ('dense', 84, 'relu'),
-         ('dense', 10, 'relu'))
+         ('dense', 10, 'sigmoid'))
 
 def train_CNN(X, Y, layers, learning_rate = 0.7, mini_batch_size = 64, beta = 0.9,
           beta1 = 0.9, beta2 = 0.999,  epsilon = 1e-8, num_epochs = 10000, 
@@ -805,6 +806,7 @@ def train_CNN(X, Y, layers, learning_rate = 0.7, mini_batch_size = 64, beta = 0.
     x = []
     fpa_cache = []
     deg = 4
+    
     # Optimization loop
     for i in range(num_epochs):
         
@@ -815,6 +817,7 @@ def train_CNN(X, Y, layers, learning_rate = 0.7, mini_batch_size = 64, beta = 0.
         # Select a minibatch
         for minibatch in minibatches:
             cache = {}
+            tim = [0, 0, 0, 0, 0, 0]
             (minibatch_X, minibatch_Y) = minibatch
             cache["A0"] = minibatch_X
             
@@ -822,19 +825,25 @@ def train_CNN(X, Y, layers, learning_rate = 0.7, mini_batch_size = 64, beta = 0.
             print("----------Forward prop----------")
             for l in range(1, len(layers)):
                 if(layers[l][0] == 'conv'):
+                    start = timer()
                     cache["A"+str(l)] = forward_conv(cache["A"+str(l-1)], 
                                                      parameters["W"+str(l)], 
                                      parameters["beta"+str(l)], 
                                      layers[l][1][3],  layers[l][1][4])
+                    tim[0] = tim[0] + timer()-start 
                 if(layers[l][0] == 'pool'):
+                    start = timer()
                     cache["A"+str(l)] = forward_pool(cache["A"+str(l-1)], 
                                      layers[l][1][1], layers[l][1][0],
                                      layers[l][2])
+                    tim[1] = tim[1] + timer()-start
                 if(layers[l][0] == 'dense'):
+                    start = timer()
                     cache["A"+str(l)], cache["z"+str(l)], cache["zhat"+str(l)], cache["Z"+str(l)], parameters["mu"+str(l)], parameters["sigma"+str(l)], cache["D"+str(l)] = forward_function(cache["A"+str(l-1)], 
                         parameters["W"+str(l)], parameters["mu"+str(l)],
                         parameters["sigma"+str(l)], parameters["gamma"+str(l)], 
                         parameters["beta"+str(l)], layers[l][2], keep_prob)
+                    tim[2] = tim[2] + timer()-start
                 if(layers[l][0] == 'flatten'):
                     cache["A"+str(l)] = cp.reshape(cache["A"+str(l-1)], 
                                    (cache["A"+str(l-1)].shape[1]*
@@ -860,25 +869,38 @@ def train_CNN(X, Y, layers, learning_rate = 0.7, mini_batch_size = 64, beta = 0.
             for l in reversed(range(1, len(layers))):
                 print("dA%d: %s" %(l+1, str(cache["dA"+str(l+1)].shape)))
                 if(layers[l][0] == 'conv'):
+                    start = timer()
                     cache["dA"+str(l)], cache["dW"+str(l)], cache["dbeta"+str(l)] = backward_conv(cache["dA"+str(l+1)],
                                 cache["A"+str(l-1)], parameters["W"+str(l)], 
                                 parameters["beta"+str(l)], 
                                 layers[l][1][3],  layers[l][1][4])
+                    tim[3] = tim[3] + timer()-start
                 if(layers[l][0] == 'pool'):
+                    start = timer()
                     cache["dA"+str(l)] = backward_pool(cache["dA"+str(l+1)], 
                                      cache["A"+str(l-1)], layers[l][1][1], 
                                      layers[l][1][0], layers[l][2])
+                    tim[4] = tim[4] + timer()-start
                 if(layers[l][0] == 'dense'):
+                    start = timer()
                     cache["dA"+str(l)], cache["dW"+str(l)], cache["dgamma"+str(l)], cache["dbeta"+str(l)] = backward_function(cache["dA"+str(l+1)], 
                         cache["A"+str(l-1)], cache["D"+str(l-1)], cache["Z"+str(l)],
                         cache["z"+str(l)], cache["zhat"+str(l)], 
                         parameters["gamma"+str(l)], parameters["beta"+str(l)],
                         parameters["W"+str(l)], parameters["mu"+str(l)], 
                         parameters["sigma"+str(l)], layers[l][2], keep_prob)
+                    tim[5] = tim[5] + timer()-start
                 if(layers[l][0] == 'flatten'):
                     cache["dA"+str(l)] = cp.reshape(cache["dA"+str(l+1)], 
                                    cache["A"+str(l-1)].shape)
                 
+            print("----------Time spent----------")
+            print("forward conv: %f" %(tim[0]))
+            print("forward pool: %f" %(tim[1]))
+            print("forward dense: %f" %(tim[2]))
+            print("backward conv: %f" %(tim[3]))
+            print("backward pool: %f" %(tim[4]))
+            print("backward dense: %f" %(tim[5]))
             
             # Update parameters
             t = t + 1 # Adam counter
@@ -935,84 +957,7 @@ def train_CNN(X, Y, layers, learning_rate = 0.7, mini_batch_size = 64, beta = 0.
 '''
     return parameters
    
-X = cp.random.rand(10, 28, 28, 3)
-Y = cp.random.rand(10, 10)
+X = cp.random.rand(10000, 28, 28, 1)
+Y = cp.random.rand(10, 10000)
 
 train_CNN(X, Y, LeNet)
-'''
-for i in range(1):
-    
-    Y = cp.random.rand(50, 128)
-    
-    layers = ((1000, 'in'), (100, 'relu'), (150, 'relu'), (70, 'relu'), (50, 'relu'),(20, 'relu'),(50, 'sigmoid'))
-    parameters = {}
-    adam = {}
-    forward = {}
-    backward = {}
-    for l in range(1, len(layers)):
-        W, gamma, beta, mu, sigma = initialize_parameters_he(layers[l-1][0], layers[l][0])
-        vdW, vdgamma, vdbeta, sdW, sdgamma, sdbeta = initialize_adam(W, beta, gamma)
-        parameters["W"+str(l)] = W
-        parameters["gamma"+str(l)] = gamma
-        parameters["beta"+str(l)] = beta
-        parameters["mu"+str(l)] = mu
-        parameters["sigma"+str(l)] = sigma
-        adam["vdW"+str(l)] = vdW
-        adam["vdgamma"+str(l)] = vdgamma
-        adam["vdbeta"+str(l)] = vdbeta
-        adam["sdW"+str(l)] = sdW
-        adam["sdgamma"+str(l)] = sdgamma
-        adam["sdbeta"+str(l)] = sdbeta
-        
-    forward["A0"] = cp.ones((1000, 128))
-    forward["D0"] = cp.ones((1000, 128))
-    
-    for l in range(1, len(layers)):
-        F = cp.array([[-1, 0, 1],[-1, 0, 1],[-1, 0, 1]])[:, :,  cp.newaxis,  cp.newaxis]
-        B = 10*cp.ones((1, 1, 1, 1))
-        H = forward["A0"][cp.newaxis, :, :, cp.newaxis]
-        Q = forward_conv(H, F, B, 3, 3)
-        P = forward_pool(Q, 3, 3)
-        QS = forward_conv(P, F, B, 3, 3)
-        PS = forward_pool(QS, 3, 3)
-        if(l == 1) :
-            print("H: %s" %(str(H.shape)))    
-            print("Q: %s" %(str(Q.shape)))
-            print("P: %s" %(str(P.shape)))    
-            print("QS: %s" %(str(QS.shape)))
-            print("PS: %s" %(str(PS.shape)))    
-        A, z, zhat, Z, mu, sigma, D = forward_function(forward["A"+str(l-1)], 
-                                                       parameters["W"+str(l)], parameters["mu"+str(l)], 
-                                                       parameters["sigma"+str(l)], parameters["gamma"+str(l)], 
-                                                       parameters["beta"+str(l)], layers[l][1], dropout = 0.8)
-        forward["A"+str(l)] = A
-        forward["z"+str(l)] = z
-        forward["zhat"+str(l)] = zhat
-        forward["Z"+str(l)] = Z
-        forward["D"+str(l)] = D
-        parameters["mu"+str(l)] = mu
-        parameters["sigma"+str(l)] = sigma
-        
-        
-    cost, dAL = cost(forward["A"+str(len(layers)-1)], Y, mode = 'SEL')
-    backward["dA"+str(len(layers)-1)] = dAL
-    print(cost)
-    
-    for l in reversed(range(1, len(layers))):     
-        dA, dW, dgamma, dbeta = backward_function(backward["dA"+str(l)],
-                                                                  forward["A"+str(l-1)],
-                                                                  forward["D"+str(l-1)], forward["Z"+str(l)],
-                                                                  forward["z"+str(l)], forward["zhat"+str(l)],
-                                                                  parameters["gamma"+str(l)], parameters["beta"+str(l)],
-                                                                  parameters["W"+str(l)], parameters["mu"+str(l)], parameters["sigma"+str(l)],
-                                                                  layers[l][1], 0.8)
-        W, gamma, beta, vdW, vdgamma, vdbeta, sdW, sdgamma, sdbeta = update_parameters_with_adam(parameters["W"+str(l)], parameters["gamma"+str(l)], parameters["beta"+str(l)],
-                                                                                                 dW, dgamma, dbeta,
-                                adam["vdW"+str(l)], adam["vdgamma"+str(l)], adam["vdbeta"+str(l)],
-                                adam["sdW"+str(l)], adam["sdgamma"+str(l)], adam["sdbeta"+str(l)],
-                                1, learning_rate = 0.01,
-                                beta1 = 0.9, beta2 = 0.999,  epsilon = 1e-8)
-        
-        backward["dA"+str(l-1)] = dA
-        
-'''
