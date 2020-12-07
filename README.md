@@ -36,6 +36,8 @@ Split data into classes
 
 ## Release History
 
+*0.1.0
+|   Almost done CNN (some bug fix in bacward)
 *0.0.0
 |   Rebuild the github (started the project last year where github was out of my scope)
 

@@ -344,7 +344,7 @@ def forward_pool(A_previous, stride, f, mode = "max"):
                     a_prev_slice = A_previous[i, vert_start:vert_end, horiz_start:horiz_end, c]
                     if mode == "max":
                         A[i, h, w, c] = cp.max(a_prev_slice)
-                    elif mode == "average":
+                    elif mode == "mean":
                         A[i, h, w, c] = cp.mean(a_prev_slice)
     
     return A
@@ -381,6 +381,8 @@ def backward_function(dA_previous, A_previous, D, Z, z, zhat, gamma, beta, W, mu
         Activation function choice.
     dropout : float (in (0, 1))
         Dropout factor.
+    last : bool
+        Is it the last backward step. Default = False
 
     Returns
     -------
@@ -407,11 +409,9 @@ def backward_function(dA_previous, A_previous, D, Z, z, zhat, gamma, beta, W, mu
     dzhat = dz*gamma
     dsigma = (dbeta*(Z-mu))*(-gamma/(2*((sigma**3)+eps)))
     dmu = (dbeta*(gamma/(sigma+eps)))+(dsigma*(1/m)*cp.sum((-2)*(Z-mu), axis=1, keepdims = True))
-    dZ = (dzhat/sigma)+(dsigma*(1/m)*(2*(Z-mu)))+((1/m)*dmu)
+    dZ = (dzhat/(sigma+eps))+(dsigma*(1/m)*(2*(Z-mu)))+((1/m)*dmu)
     dW = 1./m * cp.dot(Z, A_previous.T)
     dA = cp.dot(W.T, dZ)
-    print(dA.shape)
-    print(D.shape)
     dA = dA*D
     dA = dA/dropout
     
@@ -460,7 +460,6 @@ def backward_conv(dZ, A_previous, Filter, Bias, pad, stride):
 
     A_prev_pad = cp.pad(A_previous, ((0,0), (pad,pad), (pad,pad), (0,0),), mode='constant', constant_values = (0,0))
     dA_prev_pad = cp.pad(dA, ((0,0), (pad,pad), (pad,pad), (0,0),), mode='constant', constant_values = (0,0))
-    
     for i in range(m):                     
         a_prev_pad = A_prev_pad[i, :, :, :]
         da_prev_pad = dA_prev_pad[i, :, :, :]
@@ -476,8 +475,7 @@ def backward_conv(dZ, A_previous, Filter, Bias, pad, stride):
                     da_prev_pad[vert_start:vert_end, horiz_start:horiz_end, :] += Filter[:,:,:,c] * dZ[i, h, w, c]
                     dFilter[:,:,:,c] += a_slice * dZ[i, h, w, c]
                     dBias[:,:,:,c] += dZ[i, h, w, c]
-
-        dA[i, :, :, :] = da_prev_pad[pad:-pad, pad:-pad, :]
+        dA[i, :, :, :] = da_prev_pad[pad:da_prev_pad.shape[0]-pad, pad:da_prev_pad.shape[1]-pad, :]
     
     return dA, dFilter, dBias
 
@@ -526,7 +524,7 @@ def backward_pool(dA, A_previous, stride, f, mode = "max"):
                         mask = (a_prev_slice == cp.max(a_prev_slice))
                         dA_prev[i, vert_start: vert_end, horiz_start: horiz_end, c] += mask*dA[i,h,w,c]
                         
-                    elif mode == "average":
+                    elif mode == "mean":
 
                         dA_prev[i, vert_start: vert_end, horiz_start: horiz_end, c] += dA[i,h,w,c] * cp.ones((f, f))/f**2
                         
@@ -739,15 +737,15 @@ AlexNet = (('input', (224, 224, 3)),
            ('dense', 10, 'identity'))
 
 LeNet = (('input', (28, 28, 3)), 
-         ('conv', (5, 3, 6, 2, 1)), ('pool', (2, 2), 'mean'),
-         ('conv', (5, 6, 16, 0, 1)), ('pool', (2, 2), 'mean'), 
+         ('conv', (5, 3, 6, 2, 1)), ('pool', (2, 2), 'max'),
+         ('conv', (5, 6, 16, 0, 1)), ('pool', (2, 2), 'max'), 
          ('flatten', 400), 
          ('dense', 120, 'relu'), ('dense', 84, 'relu'),
-         ('dense', 10, 'identity'))
+         ('dense', 10, 'relu'))
 
-def CNN(X, Y, layers, learning_rate = 0.7, mini_batch_size = 64, beta = 0.9,
+def train_CNN(X, Y, layers, learning_rate = 0.7, mini_batch_size = 64, beta = 0.9,
           beta1 = 0.9, beta2 = 0.999,  epsilon = 1e-8, num_epochs = 10000, 
-          keep_prob = 0.5, print_cost = True, pourcentageStop = 0.1, cost_mode = 'SEL', log = True):
+          keep_prob = 0.9, print_cost = True, pourcentageStop = 0.1, cost_mode = 'SEL', log = True):
     """
     Modelize the designed CNN.
     
@@ -821,6 +819,7 @@ def CNN(X, Y, layers, learning_rate = 0.7, mini_batch_size = 64, beta = 0.9,
             cache["A0"] = minibatch_X
             
             # Forward propagation
+            print("----------Forward prop----------")
             for l in range(1, len(layers)):
                 if(layers[l][0] == 'conv'):
                     cache["A"+str(l)] = forward_conv(cache["A"+str(l-1)], 
@@ -842,33 +841,40 @@ def CNN(X, Y, layers, learning_rate = 0.7, mini_batch_size = 64, beta = 0.9,
                                     cache["A"+str(l-1)].shape[2]*
                                     cache["A"+str(l-1)].shape[3],
                                     cache["A"+str(l-1)].shape[0]))
+                    cache["D"+str(l)] = cp.ones(cache["A"+str(l)].shape)
                 print("A%d: %s" %(l, str(cache["A"+str(l)].shape)))
+                
+            
             # Compute cost and add to the cost total
-            costs, cache["dA"+str(L)] = cost(cache["A"+str(L)],
+            print("----------Cost computation----------")
+            costs, cache["dA"+str(L+1)] = cost(cache["A"+str(L)],
                                                 minibatch_Y, cost_mode)
             
             cost_total += cp.sum(abs(costs))
-            print(cost_total)
+            print("Cost: %f" %(cost_total))
+            
+            
 
             # Backward propagation
-            for l in reversed(range(0, len(layers)-1)):
+            print("----------Bacward prop----------")
+            for l in reversed(range(1, len(layers))):
                 print("dA%d: %s" %(l+1, str(cache["dA"+str(l+1)].shape)))
                 if(layers[l][0] == 'conv'):
-                    cache["dA"+str(l)], cache["dFilter"+str(l)], cache["dbias"+str(l)] = backward_conv(cache["dA"+str(l+1)],
-                                cache["A"+str(l+1)], parameters["W"+str(l+1)], 
-                                parameters["beta"+str(l+1)], 
-                                layers[l+1][1][3],  layers[l+1][1][4])
+                    cache["dA"+str(l)], cache["dW"+str(l)], cache["dbeta"+str(l)] = backward_conv(cache["dA"+str(l+1)],
+                                cache["A"+str(l-1)], parameters["W"+str(l)], 
+                                parameters["beta"+str(l)], 
+                                layers[l][1][3],  layers[l][1][4])
                 if(layers[l][0] == 'pool'):
                     cache["dA"+str(l)] = backward_pool(cache["dA"+str(l+1)], 
-                                     cache["A"+str(l+1)], layers[l+1][1][1], 
-                                     layers[l+1][1][0], layers[l+1][2])
+                                     cache["A"+str(l-1)], layers[l][1][1], 
+                                     layers[l][1][0], layers[l][2])
                 if(layers[l][0] == 'dense'):
                     cache["dA"+str(l)], cache["dW"+str(l)], cache["dgamma"+str(l)], cache["dbeta"+str(l)] = backward_function(cache["dA"+str(l+1)], 
-                        cache["A"+str(l+1)], cache["D"+str(l+1)], cache["Z"+str(l+1)],
-                        cache["z"+str(l+1)], cache["zhat"+str(l+1)], 
-                        parameters["gamma"+str(l+1)], parameters["beta"+str(l+1)],
-                        parameters["W"+str(l+1)], parameters["mu"+str(l+1)], 
-                        parameters["sigma"+str(l+1)], layers[l+1][2], keep_prob)
+                        cache["A"+str(l-1)], cache["D"+str(l-1)], cache["Z"+str(l)],
+                        cache["z"+str(l)], cache["zhat"+str(l)], 
+                        parameters["gamma"+str(l)], parameters["beta"+str(l)],
+                        parameters["W"+str(l)], parameters["mu"+str(l)], 
+                        parameters["sigma"+str(l)], layers[l][2], keep_prob)
                 if(layers[l][0] == 'flatten'):
                     cache["dA"+str(l)] = cp.reshape(cache["dA"+str(l+1)], 
                                    cache["A"+str(l-1)].shape)
@@ -876,22 +882,18 @@ def CNN(X, Y, layers, learning_rate = 0.7, mini_batch_size = 64, beta = 0.9,
             
             # Update parameters
             t = t + 1 # Adam counter
+            print("----------Optimisation----------")
             for l in range(1, len(layers)):
+                print("layer: %d" %(l))
                 if(layers[l][0] == 'conv'):
-                    parameters["W"+str(l)], parameters["beta"+str(l)], 
-                    adam["vdW"+str(l)], adam["vdbeta"+str(l)], adam["sdW"+str(l)], 
-                    adam["sdbeta"+str(l)] = update_parameters_with_adam_conv(parameters["W"+str(l)], 
+                    parameters["W"+str(l)], parameters["beta"+str(l)], adam["vdW"+str(l)], adam["vdbeta"+str(l)], adam["sdW"+str(l)], adam["sdbeta"+str(l)] = update_parameters_with_adam_conv(parameters["W"+str(l)], 
                                  parameters["beta"+str(l)], cache["dW"+str(l)], 
                                  cache["dbeta"+str(l)], adam["vdW"+str(l)], 
                                  adam["vdbeta"+str(l)], adam["sdW"+str(l)], 
                                  adam["sdbeta"+str(l)], t, learning_rate, 
                                  beta1, beta2, epsilon)
                 if(layers[l][0] == 'dense'):
-                    parameters["W"+str(l)], parameters["gamma"+str(l)],
-                    parameters["beta"+str(l)], adam["vdW"+str(l)], 
-                    adam["vdgamma"+str(l)], adam["vdbeta"+str(l)], 
-                    adam["sdW"+str(l)], adam["sdgamma"+str(l)], 
-                    adam["sdbeta"+str(l)] = update_parameters_with_adam(parameters["W"+str(l)],
+                    parameters["W"+str(l)], parameters["gamma"+str(l)], parameters["beta"+str(l)], adam["vdW"+str(l)], adam["vdgamma"+str(l)], adam["vdbeta"+str(l)], adam["sdW"+str(l)], adam["sdgamma"+str(l)], adam["sdbeta"+str(l)] = update_parameters_with_adam(parameters["W"+str(l)],
                                 parameters["gamma"+str(l)], parameters["beta"+str(l)],
                                 cache["dW"+str(l)], cache["dgamma"+str(l)], 
                                 cache["dbeta"+str(l)], adam["vdW"+str(l)],
@@ -906,9 +908,9 @@ def CNN(X, Y, layers, learning_rate = 0.7, mini_batch_size = 64, beta = 0.9,
         else:
             cost_avg = cost_total / m
         
-        
+        '''
         # Print the cost every 1000 epoch
-        if print_cost and i % 10 == 0:
+        if print_cost and i % 1000 == 0:
             print ("Cost after epoch %i: %f" %(i, cost_avg))
         if print_cost and i % 100 == 0:
             costs.append(cost_avg)
@@ -930,13 +932,13 @@ def CNN(X, Y, layers, learning_rate = 0.7, mini_batch_size = 64, beta = 0.9,
     plt.title("Learning rate = " + str(learning_rate))
     plt.show()
     plt.close
-
+'''
     return parameters
    
-X = cp.ones((128, 28, 28, 3))
-Y = cp.ones((10, 128))
+X = cp.random.rand(10, 28, 28, 3)
+Y = cp.random.rand(10, 10)
 
-CNN(X, Y, LeNet)
+train_CNN(X, Y, LeNet)
 '''
 for i in range(1):
     
