@@ -13,20 +13,20 @@ The result (orange) on temperature data (blue)
 
 This neural network can predict temperature within an interval below +- 2°C.
 
-This neural network points out that it is really difficult to predict wind direction as it is almost a random function.
-The same thing appear for rain since levels are almost bolean and my output function is a sigmoid.
-
-Despite these problems, this works really well on temperature and pression.
-
-My own thought is, weather forecast will always be better forecast from model (as it rely on differential equation).
-
 More about sources [Here](https://github.com/MaximeAeva/Neuron/blob/master/src/README.md)
 
 More about Neural style transfert on tensorflow [here](https://github.com/MaximeAeva/NST)
 
 ## About
-When training, CNN display information regarding its work
+When training, CNN display information regarding its work (Please, be kind regarding my conf :'()
 ```console
+----------Hardware config information----------
+CPU :
+          Physical cores: 2
+          Total cores: 4
+GPU :
+          GeForce 920M
+
 ----------Forward prop----------
 A1: (64, 28, 28, 6)
 A2: (64, 14, 14, 6)
@@ -77,6 +77,8 @@ Windows:
 git clone
 ```
 Then run train.py will train different network architectures until it finds one below your specified accuracy.
+Or
+Run NeuralFunctions.py to get launch CNN on GPU. (data is randomly generated or now)
 
 ## Usage example
 
@@ -84,6 +86,8 @@ Split data into classes
 
 ## Release History
 
+*0.2.1
+|   Improved CNN and hardaware setup display. Dask can't apply on CONV layers. Maybe delayed ?
 *0.2.0
 |   Running CNN -> Try Dask and UCX + remove unnecessary files
 *0.1.0

@@ -3,10 +3,32 @@ import cupy as cp
 import math
 from NeuralActivation import activation
 from timeit import default_timer as timer
-from dask.distributed import Client
+import dask.array as da
+import psutil as cpuInfo
+import GPUtil as gpuInfo
 
-client = Client(n_workers=4)
-client.close()
+print("----------Hardware config information----------")
+print("CPU :")
+print("          Physical cores:", cpuInfo.cpu_count(logical=False))
+print("          Total cores:", cpuInfo.cpu_count(logical=True))
+gpus = gpuInfo.getGPUs()
+print("GPU :")
+for gpu in gpus:
+    print("          "+gpu.name)
+    
+'''
+print("----------Speed test----------")
+start = timer()
+rs = da.random.RandomState(RandomState=np.random.RandomState) 
+x = rs.normal(10, 1, size=(50000, 50000), chunks=(1000, 1000))
+(x + 1)[::2, ::2].sum().compute()
+print("MultiThreading CPU : %f s" %(timer()-start))
+start = timer()
+rs = da.random.RandomState(RandomState=cp.random.RandomState)
+x = rs.normal(10, 1, size=(50000, 50000), chunks=(1000, 1000))
+(x + 1)[::2, ::2].sum().compute()
+print("MultiThreading GPU : %f s" %(timer()-start))
+'''
 
 def initialize_parameters_he(in_dim, out_dim):
     '''
@@ -283,10 +305,12 @@ def forward_conv(A_previous, Filter, Bias, pad, stride):
     n_H = int(((n_H_prev-f+2*pad)/stride)+1)
     n_W = int(((n_W_prev-f+2*pad)/stride)+1)
     
+    
+    
     Z = cp.zeros([m, n_H, n_W, n_C])
-    
+
     A_prev_pad = cp.pad(A_previous, ((0,0), (pad,pad), (pad,pad), (0,0),), mode='constant', constant_values = (0,0))
-    
+
     for i in range(m):               
         a_prev_pad = A_prev_pad[i, :, :, :]             
         for h in range(n_H):     
@@ -300,7 +324,6 @@ def forward_conv(A_previous, Filter, Bias, pad, stride):
                 a_slice_prev = a_prev_pad[vert_start:vert_end, horiz_start:horiz_end, :]
                 for c in range(n_C):  
                     Z[i, h, w, c] = cp.squeeze(cp.sum(a_slice_prev*Filter[:, :, :, c])+Bias[:, :, :, c])
-    
     return Z
 
 def forward_pool(A_previous, stride, f, mode = "max"):
