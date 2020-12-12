@@ -306,11 +306,23 @@ def forward_conv(A_previous, Filter, Bias, pad, stride):
     n_W = int(((n_W_prev-f+2*pad)/stride)+1)
     
     
-    
-    Z = cp.zeros([m, n_H, n_W, n_C])
 
+    Z = cp.zeros([m, n_H, n_W, n_C])
+    
     A_prev_pad = cp.pad(A_previous, ((0,0), (pad,pad), (pad,pad), (0,0),), mode='constant', constant_values = (0,0))
 
+    i0 = cp.repeat(cp.arange(f), f)
+    i1 = cp.repeat(cp.arange(n_H_prev), n_H_prev)
+    j0 = cp.tile(cp.arange(f), f)
+    j1 = cp.tile(cp.arange(n_H_prev), n_W_prev)
+    i = cp.reshape(i0, (-1, 1))+cp.reshape(i1, (1, -1))
+    j = cp.reshape(j0, (-1, 1))+cp.reshape(j1, (1, -1))
+    k = cp.reshape(cp.repeat(cp.arange(n_C_prev), f**2), (-1, 1))
+    Ztest = cp.squeeze(A_prev_pad[:, i, j, :])
+    weights = cp.reshape(Filter, (f**2, n_C_prev, n_C))
+    conV = cp.tensordot(weights, Ztest, ((0, 1), (1, 3)))
+    Z = cp.reshape(cp.transpose(conV, (1, 2, 0)), (m, n_H, n_W, n_C))
+    '''
     for i in range(m):               
         a_prev_pad = A_prev_pad[i, :, :, :]             
         for h in range(n_H):     
@@ -324,6 +336,7 @@ def forward_conv(A_previous, Filter, Bias, pad, stride):
                 a_slice_prev = a_prev_pad[vert_start:vert_end, horiz_start:horiz_end, :]
                 for c in range(n_C):  
                     Z[i, h, w, c] = cp.squeeze(cp.sum(a_slice_prev*Filter[:, :, :, c])+Bias[:, :, :, c])
+                    '''
     return Z
 
 def forward_pool(A_previous, stride, f, mode = "max"):
@@ -982,7 +995,7 @@ def train_CNN(X, Y, layers, learning_rate = 0.7, mini_batch_size = 64, beta = 0.
 '''
     return parameters
    
-X = cp.random.rand(10000, 28, 28, 3)
-Y = cp.random.rand(10, 10000)
+X = cp.random.rand(2, 28, 28, 3)
+Y = cp.random.rand(10, 2)
 
 train_CNN(X, Y, LeNet)
