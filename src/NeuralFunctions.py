@@ -496,9 +496,27 @@ def backward_conv(dZ, A_previous, Filter, Bias, pad, stride):
     dA = cp.zeros((m, n_H_prev, n_W_prev, n_C_prev))                           
     dFilter = cp.zeros((f, f, n_C_prev, n_C))
     dBias = cp.zeros((1, 1, 1, n_C))
-
+    dBiasTest = cp.sum(dZ, axis=(0, 1, 2))
+    
     A_prev_pad = cp.pad(A_previous, ((0,0), (pad,pad), (pad,pad), (0,0),), mode='constant', constant_values = (0,0))
     dA_prev_pad = cp.pad(dA, ((0,0), (pad,pad), (pad,pad), (0,0),), mode='constant', constant_values = (0,0))
+    i0 = cp.repeat(cp.arange(f), f)
+    i1 = cp.repeat(cp.arange(n_H), n_H)
+    j0 = cp.tile(cp.arange(f), f)
+    j1 = cp.tile(cp.arange(n_H), n_W)
+    i = cp.reshape(i0, (-1, 1))+cp.reshape(i1, (1, -1))
+    j = cp.reshape(j0, (-1, 1))+cp.reshape(j1, (1, -1))
+    k = cp.reshape(cp.repeat(cp.arange(n_C_prev), f**2), (-1, 1))
+    Ztest = cp.squeeze(A_prev_pad[:, i, j, :])
+    dZtest = cp.reshape(cp.squeeze(dZ), (m, -1, n_C))
+    dFiltertest = cp.tensordot(dZtest, cp.transpose(Ztest, (1, 0, 2, 3)), ((0, 1), (1, 2)))
+    dFiltertest = cp.reshape(cp.transpose(dFiltertest, (1, 2, 0)), (f, f, n_C_prev, n_C))
+    weights = cp.reshape(Filter, (f**2, n_C_prev, n_C))
+    dAt = cp.tensordot(weights, dZtest, (2, 2))
+    padded = cp.zeros(A_previous.shape)
+    dAt_rshp = cp.reshape(dAt, (f**2, -1, m))
+    dAtest = padded[:, pad:-pad, pad:-pad, :]
+    
     for i in range(m):                     
         a_prev_pad = A_prev_pad[i, :, :, :]
         da_prev_pad = dA_prev_pad[i, :, :, :]
@@ -515,7 +533,8 @@ def backward_conv(dZ, A_previous, Filter, Bias, pad, stride):
                     dFilter[:,:,:,c] += a_slice * dZ[i, h, w, c]
                     dBias[:,:,:,c] += dZ[i, h, w, c]
         dA[i, :, :, :] = da_prev_pad[pad:da_prev_pad.shape[0]-pad, pad:da_prev_pad.shape[1]-pad, :]
-    
+    U = dBias-dBiasTest
+    U2 = dFilter-dFiltertest
     return dA, dFilter, dBias
 
 def backward_pool(dA, A_previous, stride, f, mode = "max"):
@@ -995,7 +1014,7 @@ def train_CNN(X, Y, layers, learning_rate = 0.7, mini_batch_size = 64, beta = 0.
 '''
     return parameters
    
-X = cp.random.rand(1000, 28, 28, 3)
-Y = cp.random.rand(10, 1000)
+X = cp.random.rand(2, 28, 28, 3)
+Y = cp.random.rand(10, 2)
 
 train_CNN(X, Y, LeNet)
