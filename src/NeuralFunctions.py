@@ -312,9 +312,9 @@ def forward_conv(A_previous, Filter, Bias, pad, stride):
     A_prev_pad = cp.pad(A_previous, ((0,0), (pad,pad), (pad,pad), (0,0),), mode='constant', constant_values = (0,0))
 
     i0 = cp.repeat(cp.arange(f), f)
-    i1 = cp.repeat(cp.arange(n_H_prev), n_H_prev)
+    i1 = cp.repeat(cp.arange(n_H), n_H)
     j0 = cp.tile(cp.arange(f), f)
-    j1 = cp.tile(cp.arange(n_H_prev), n_W_prev)
+    j1 = cp.tile(cp.arange(n_H), n_W)
     i = cp.reshape(i0, (-1, 1))+cp.reshape(i1, (1, -1))
     j = cp.reshape(j0, (-1, 1))+cp.reshape(j1, (1, -1))
     k = cp.reshape(cp.repeat(cp.arange(n_C_prev), f**2), (-1, 1))
@@ -995,7 +995,7 @@ def train_CNN(X, Y, layers, learning_rate = 0.7, mini_batch_size = 64, beta = 0.
 '''
     return parameters
    
-X = cp.random.rand(2, 28, 28, 3)
-Y = cp.random.rand(10, 2)
+X = cp.random.rand(1000, 28, 28, 3)
+Y = cp.random.rand(10, 1000)
 
 train_CNN(X, Y, LeNet)
