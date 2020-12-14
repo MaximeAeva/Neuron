@@ -368,8 +368,21 @@ def forward_pool(A_previous, stride, f, mode = "max"):
     n_W = int(1 + (n_W_prev - f) / stride)
     n_C = n_C_prev
 
-    A = cp.zeros((m, n_H, n_W, n_C))              
-    
+    A = cp.zeros((m, n_H, n_W, n_C))       
+
+    i0 = cp.repeat(cp.arange(f), f)
+    i1 = stride * cp.repeat(cp.arange(n_W), n_H)
+    j0 = cp.tile(cp.arange(f), f)
+    j1 = stride * cp.tile(cp.arange(n_H), n_W)
+    i = cp.reshape(i0, (-1, 1))+cp.reshape(i1, (1, -1))
+    j = cp.reshape(j0, (-1, 1))+cp.reshape(j1, (1, -1))
+    R = cp.squeeze(A_previous[:, i, j, :])
+    if mode == "max":
+        pl = cp.max(R, 1)
+    elif mode == "mean":
+        pl = cp.mean(R, 1)
+    A = cp.reshape(pl, (m, n_H, n_W, n_C))
+    '''
     for i in range(m):                       
         for h in range(n_H):                   
             vert_start = h*stride
@@ -385,7 +398,7 @@ def forward_pool(A_previous, stride, f, mode = "max"):
                         A[i, h, w, c] = cp.max(a_prev_slice)
                     elif mode == "mean":
                         A[i, h, w, c] = cp.mean(a_prev_slice)
-    
+    '''
     return A
 
 def backward_function(dA_previous, A_previous, D, Z, z, zhat, gamma, beta, W, mu, sigma, function, dropout):
