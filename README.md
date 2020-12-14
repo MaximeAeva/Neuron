@@ -1,5 +1,5 @@
 # Neuron
-> A CUDA boosted CNN implementation from scratch
+> CNN implementation from scratch (learning by doing)
 
 I used weather data (temperature, pression, rain, wind ...) to build and test my neural network.
 
@@ -86,13 +86,15 @@ Split data into classes
 
 ## Release History
 
-*0.2.1
+* 0.2.2
+|   Currently reworking conv and pool layer to get rid of loops (4000 times faster and dask friendly architecture)
+* 0.2.1
 |   Improved CNN and hardaware setup display. Dask can't apply on CONV layers. Maybe delayed ?
-*0.2.0
+* 0.2.0
 |   Running CNN -> Try Dask and UCX + remove unnecessary files
-*0.1.0
+* 0.1.0
 |   Almost done CNN (some bug fix in bacward)
-*0.0.0
+* 0.0.0
 |   Rebuild the github (started the project last year where github was out of my scope)
 
 ## Meta
