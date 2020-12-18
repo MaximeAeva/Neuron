@@ -1,5 +1,7 @@
 import matplotlib.pyplot as plt
+import matplotlib
 import networkx as nx
+import numpy as np
 
 def loadMyNet(parms, layers_dims):
     plt.figure(figsize=(20,10), dpi=200)
@@ -34,3 +36,33 @@ def loadMyNet(parms, layers_dims):
     nx.draw(G, pos, edges=edges, edge_color=colors, width=weights, node_size=10)
     
     plt.show()
+    
+def computationFollowUp(x_vec,y1_data,line1,identifier='',pause_time=0.01):
+    if line1==[]:
+        try:
+            import IPython
+            shell = IPython.get_ipython()
+            shell.enable_matplotlib(gui='qt')
+        except:
+            pass
+        plt.style.use('ggplot')
+        plt.ion()
+        fig = plt.figure(figsize=(13,6))
+        ax = fig.add_subplot(111)
+        line1, = ax.plot(x_vec,y1_data,'r-o',alpha=0.8)
+        plt.ylabel('Y Label')
+        plt.xlabel('epochs')
+        plt.title('{}'.format(identifier))
+        plt.show()
+        
+    line1.set_ydata(y1_data)
+    if np.min(y1_data)<=line1.axes.get_ylim()[0] or np.max(y1_data)>=line1.axes.get_ylim()[1]:
+        plt.ylim([np.min(y1_data)-np.std(y1_data),np.max(y1_data)+np.std(y1_data)])
+    
+    plt.pause(pause_time)
+    
+    return line1
+
+
+    
+    

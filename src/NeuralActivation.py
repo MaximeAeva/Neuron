@@ -12,6 +12,8 @@ def activation(direction, function, z, dA = None):
             return bentid(z)
         elif function == 'identity':
             return identity(z)
+        elif function == 'softmax':
+            return softmax(z)
     else : 
         if function == 'relu':
             return relu_backward(dA, z)
@@ -23,6 +25,8 @@ def activation(direction, function, z, dA = None):
             return bentid_backward(dA, z)
         elif function == 'identity':
             return identity_backward(dA, z)
+        elif function == 'softmax':
+            return softmax_backward(dA, z)
 
 
 def identity(z):
@@ -50,10 +54,17 @@ def sigmoid_backward(dA, z):
     return dA * (1/(1+cp.exp(-z))) * (1-(1/(1+cp.exp(-z))))
 
 def relu(z):
-    return cp.maximum(0,z)
+    return cp.where(z >= 0, z, 0)
 
 def relu_backward(dA, z):  
     dz = cp.array(dA, copy=True)  
-    dz = cp.maximum(0, dz)
+    dz = cp.where(z >= 0, 1, 0)
     return dz
 
+def softmax(z):
+    e_x = cp.exp(z - cp.max(z, axis=-1, keepdims=True))
+    return e_x/cp.sum(e_x, axis=-1, keepdims=True)
+
+def softmax_backward(dA, z):
+    e_x = cp.exp(z - cp.max(z, axis=-1, keepdims=True))
+    return dA * (e_x/cp.sum(e_x, axis=-1, keepdims=True)) * (1 - (e_x/cp.sum(e_x, axis=-1, keepdims=True)))

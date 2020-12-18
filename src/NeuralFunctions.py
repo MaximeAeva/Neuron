@@ -1,11 +1,15 @@
 import numpy as np
 import cupy as cp
 import math
+import Display
+import matplotlib.pyplot as plt
 from NeuralActivation import activation
 from timeit import default_timer as timer
 import dask.array as da
 import psutil as cpuInfo
 import GPUtil as gpuInfo
+import DataCreator
+import Utils
 
 print("----------Hardware config information----------")
 print("CPU :")
@@ -55,12 +59,12 @@ def initialize_parameters_he(in_dim, out_dim):
         Standard deviation for batch norm.
 
     '''
-    W = cp.random.randn(out_dim, in_dim)*cp.sqrt(2/in_dim)
+    l = cp.sqrt(1/in_dim)
+    W = cp.random.uniform(-l, l, (out_dim, in_dim))
     gamma = cp.ones((out_dim, 1))
     beta = cp.zeros((out_dim, 1))
     mu = cp.zeros((out_dim, 1))
     sigma = cp.zeros((out_dim, 1))
-    
     return W, gamma, beta, mu, sigma
 
 def initialize_parameters_he_conv(f, depth, filter_number):
@@ -83,7 +87,8 @@ def initialize_parameters_he_conv(f, depth, filter_number):
     bias : cp.array(1, 1, 1, number_filter)
         Filter bias
     '''
-    Filter = cp.random.randn(f, f, depth, filter_number)*cp.sqrt(2/(f**2))
+    l = cp.sqrt(1/(f**2))
+    Filter = cp.random.uniform(-l, l, (f, f, depth, filter_number))
     bias = cp.zeros((1, 1, 1, filter_number))
     
     return Filter, bias
@@ -263,7 +268,7 @@ def forward_function(A_previous, W, mu, sigma, gamma, beta, function, dropout = 
         sigma = cp.std(Z, axis = 1, keepdims = True)
     
     zhat = ((Z-cp.mean(mu, axis = 1, keepdims = True))
-            /(((m/(m-1))*cp.mean(sigma, axis = 1, keepdims = True))+eps))
+            /(((m/((m-1)+eps))*cp.mean(sigma, axis = 1, keepdims = True))+eps))
     z = (gamma*zhat)+beta
     A = activation('forward', function, z)
     D = cp.random.rand(A.shape[0], A.shape[1])                                        
@@ -274,7 +279,7 @@ def forward_function(A_previous, W, mu, sigma, gamma, beta, function, dropout = 
             
     return A, z, zhat, Z, mu, sigma, D
 
-def forward_conv(A_previous, Filter, Bias, pad, stride):
+def forward_conv(A_previous, Filter, Bias, pad, stride, function = 'identity'):
     '''
     A forward convolution step.
     Calcul output shape : ((x-f+2*pad)/stride)+1
@@ -298,14 +303,17 @@ def forward_conv(A_previous, Filter, Bias, pad, stride):
         Output layer image.
 
     '''
+    
     (m, n_H_prev, n_W_prev, n_C_prev) = A_previous.shape
 
     (f, f, n_C_prev, n_C) = Filter.shape
     
+    mu = cp.mean(Filter)
+    s = cp.std(Filter)
+    Filter = (Filter-mu)/s
+    
     n_H = int(((n_H_prev-f+2*pad)/stride)+1)
     n_W = int(((n_W_prev-f+2*pad)/stride)+1)
-    
-    
 
     Z = cp.zeros([m, n_H, n_W, n_C])
     
@@ -318,10 +326,12 @@ def forward_conv(A_previous, Filter, Bias, pad, stride):
     i = cp.reshape(i0, (-1, 1))+cp.reshape(i1, (1, -1))
     j = cp.reshape(j0, (-1, 1))+cp.reshape(j1, (1, -1))
     k = cp.reshape(cp.repeat(cp.arange(n_C_prev), f**2), (-1, 1))
-    Ztest = cp.squeeze(A_prev_pad[:, i, j, :])
+    Ztest = A_prev_pad[:, i, j, :]
     weights = cp.reshape(Filter, (f**2, n_C_prev, n_C))
     conV = cp.tensordot(weights, Ztest, ((0, 1), (1, 3)))
-    Z = cp.reshape(cp.transpose(conV, (1, 2, 0)), (m, n_H, n_W, n_C))
+    Z = cp.reshape(cp.transpose(conV, (1, 2, 0)), (m, n_H, n_W, n_C)) + Bias
+    
+    Z = activation('forward', function, Z)
     '''
     for i in range(m):               
         a_prev_pad = A_prev_pad[i, :, :, :]             
@@ -376,11 +386,11 @@ def forward_pool(A_previous, stride, f, mode = "max"):
     j1 = stride * cp.tile(cp.arange(n_H), n_W)
     i = cp.reshape(i0, (-1, 1))+cp.reshape(i1, (1, -1))
     j = cp.reshape(j0, (-1, 1))+cp.reshape(j1, (1, -1))
-    R = cp.squeeze(A_previous[:, i, j, :])
+    R = A_previous[:, i, j, :]
     if mode == "max":
-        pl = cp.max(R, 1)
+        pl = cp.max(R, axis=1)
     elif mode == "mean":
-        pl = cp.mean(R, 1)
+        pl = cp.mean(R, axis=1)
     A = cp.reshape(pl, (m, n_H, n_W, n_C))
     '''
     for i in range(m):                       
@@ -453,7 +463,7 @@ def backward_function(dA_previous, A_previous, D, Z, z, zhat, gamma, beta, W, mu
     eps = 1e-8 
     
     mu = cp.mean(mu, axis = 1, keepdims = True)
-    sigma = (m/(m-1))*cp.mean(sigma, axis = 1, keepdims = True)
+    sigma = (m/((m-1)+eps))*cp.mean(sigma, axis = 1, keepdims = True)
     
     dz = activation('backward', function, z, dA_previous)
     dbeta = cp.sum(dz, axis=1, keepdims = True)
@@ -470,7 +480,7 @@ def backward_function(dA_previous, A_previous, D, Z, z, zhat, gamma, beta, W, mu
     
     return dA, dW, dgamma, dbeta
 
-def backward_conv(dZ, A_previous, Filter, Bias, pad, stride):
+def backward_conv(dZ, A_previous, Filter, Bias, pad, stride, function = 'identity'):
     '''
     A backward convolution step
 
@@ -499,7 +509,8 @@ def backward_conv(dZ, A_previous, Filter, Bias, pad, stride):
         Cost derivative from Bias.
 
     '''
-
+    dZ = activation('backward', function, 1, dZ)
+    
     (m, n_H_prev, n_W_prev, n_C_prev) = A_previous.shape
     
     (f, f, n_C_prev, n_C) = Filter.shape
@@ -519,23 +530,20 @@ def backward_conv(dZ, A_previous, Filter, Bias, pad, stride):
     j1 = stride * cp.tile(cp.arange(n_H), n_W)
     i = cp.reshape(i0, (-1, 1))+cp.reshape(i1, (1, -1))
     j = cp.reshape(j0, (-1, 1))+cp.reshape(j1, (1, -1))
-    k = cp.reshape(cp.repeat(cp.arange(n_C_prev), f**2), (-1, 1))
-    Ztest = cp.squeeze(A_prev_pad[:, i, j, :])
-    dZtest = cp.reshape(cp.squeeze(dZ), (m, -1, n_C))
+    Ztest = A_prev_pad[:, i, j, :]
+    dZtest = cp.reshape(dZ, (m, -1, n_C))
     dFiltertest = cp.tensordot(dZtest, cp.transpose(Ztest, (1, 0, 2, 3)), ((0, 1), (1, 2)))
     dFilter = cp.reshape(cp.transpose(dFiltertest, (1, 2, 0)), (f, f, n_C_prev, n_C))
-    weights = cp.reshape(Filter, (f**2, n_C_prev, n_C))
-    i0 = cp.tile(i0, n_C_prev)
-    j0 = cp.tile(cp.arange(f), f * n_C_prev)
-    i = cp.reshape(i0, (-1, 1)) + cp.reshape(i1, (1, -1))
-    j = cp.reshape(j0, (-1, 1)) + cp.reshape(j1, (1, -1))
-    Ztest = cp.squeeze(A_prev_pad[:, i, j, k])
-    dAt = cp.tensordot(weights, dZtest.T, (2, 0))
-    padded = cp.transpose(cp.zeros(A_prev_pad.shape), (0, 3, 1, 2))
-    dAt_rshp = cp.transpose(cp.reshape(dAt, (n_C_prev*(f**2), -1, m)), (2, 0, 1))
-    cp.scatter_add(padded, (slice(None), k, i, j), dAt_rshp)
-    dA = cp.transpose(padded[:, :, pad:dA_prev_pad.shape[1]-pad, pad:dA_prev_pad.shape[2]-pad], (0, 2, 3, 1))
+    dZ = cp.reshape(cp.transpose(dZ, (3, 1, 2, 0)), (n_C, -1))
+    weights = cp.reshape(cp.transpose(Filter, (3, 1, 2, 0)), (n_C, -1))
+    dA_prev_pad = cp.dot(weights.T, dZ)
+    strPad = "same"
+    if(pad==0):
+        strPad = "valid"
+    dA = Utils.column_to_image(dA_prev_pad, (m, n_C_prev, n_H_prev, n_W_prev), (f, f), stride, strPad)
+    
     '''
+    Intuitive way (Really not optimized)
     for i in range(m):                     
         a_prev_pad = A_prev_pad[i, :, :, :]
         da_prev_pad = dA_prev_pad[i, :, :, :]
@@ -549,8 +557,8 @@ def backward_conv(dZ, A_previous, Filter, Bias, pad, stride):
                 a_slice = a_prev_pad[vert_start:vert_end, horiz_start:horiz_end, :]
                 for c in range(n_C):
                     da_prev_pad[vert_start:vert_end, horiz_start:horiz_end, :] += Filter[:,:,:,c] * dZ[i, h, w, c]
-                    dFilter[:,:,:,c] += a_slice * dZ[i, h, w, c]
-                    dBias[:,:,:,c] += dZ[i, h, w, c]
+                    #dFilter[:,:,:,c] += a_slice * dZ[i, h, w, c]
+                    #dBias[:,:,:,c] += dZ[i, h, w, c]
         dA[i, :, :, :] = da_prev_pad[pad:da_prev_pad.shape[0]-pad, pad:da_prev_pad.shape[1]-pad, :]
     '''
     return dA, dFilter, dBias
@@ -582,8 +590,22 @@ def backward_pool(dA, A_previous, stride, f, mode = "max"):
     m, n_H_prev, n_W_prev, n_C_prev = A_previous.shape
     m, n_H, n_W, n_C = dA.shape
     
-    dA_prev = cp.zeros(A_previous.shape)
+    dA = cp.ravel(cp.transpose(dA, (1, 2, 0, 3)))
+    dA_prev = cp.zeros((f**2, dA.size))
+    A_previous = cp.reshape(cp.transpose(A_previous, (0, 3, 1, 2)), (m*n_C_prev, 1, n_H_prev, n_W_prev))
+    A_prev = Utils.image_to_column(A_previous, (f, f), stride)
     
+    if mode == "max":
+        mask = cp.argmax(A_prev, axis=0).flatten()
+        dA_prev[mask, cp.linspace(0, dA.size-1, dA.size, dtype=int)] = dA
+    elif mode == "mean":
+        dA_prev[:,  cp.linspace(0, dA.size-1, dA.size, dtype=int)] = 1. / dA_prev.shape[0] * dA
+        
+    dA_prev = cp.reshape(dA_prev, (n_H_prev, n_W_prev, m, n_C_prev))
+    dA_prev = cp.transpose(dA_prev, (2, 0, 1, 3))
+    
+    '''
+    Intuitive way (Really not optimized)
     for i in range(m):               
         a_prev = A_previous[i, :, :, :]
         
@@ -603,7 +625,7 @@ def backward_pool(dA, A_previous, stride, f, mode = "max"):
                     elif mode == "mean":
 
                         dA_prev[i, vert_start: vert_end, horiz_start: horiz_end, c] += dA[i,h,w,c] * cp.ones((f, f))/f**2
-                        
+    '''
     return dA_prev
 
 def cost(AL, Y, mode = 'SEL'):
@@ -631,8 +653,9 @@ def cost(AL, Y, mode = 'SEL'):
     m = Y.shape[1]
     
     if mode == 'XC':
+        AL = cp.clip(AL, 1e-15, 1-1e-15)
         cost = -(1/m)*cp.sum((Y*cp.log(AL)+((1-Y)*cp.log(1-AL))), axis = 1)
-        dAL = - (cp.divide(Y, AL) - cp.divide(1 - Y, 1 -AL))
+        dAL = - (cp.divide(Y, AL) - cp.divide(1 - Y, 1 - AL))
     elif mode == 'SEL':
         cost = (1/(2*m))*cp.sum((AL - Y)**2, axis = 1)
         dAL = AL - Y
@@ -813,15 +836,16 @@ AlexNet = (('input', (224, 224, 3)),
            ('dense', 10, 'sigmoid'))
 
 LeNet = (('input', (28, 28, 3)), 
-         ('conv', (5, 3, 6, 2, 1)), ('pool', (2, 2), 'max'),
-         ('conv', (5, 6, 16, 0, 1)), ('pool', (2, 2), 'max'), 
+         ('conv', (5, 3, 6, 2, 1),'tanh'), ('pool', (2, 2), 'max'),
+         ('conv', (5, 6, 16, 0, 1),'tanh'), ('pool', (2, 2), 'max'), 
          ('flatten', 400), 
          ('dense', 120, 'relu'), ('dense', 84, 'relu'),
-         ('dense', 10, 'sigmoid'))
+         ('dense', 3, 'softmax'))
 
-def train_CNN(X, Y, layers, learning_rate = 0.7, mini_batch_size = 64, beta = 0.9,
+def train_CNN(X, Y, layers, learning_rate = 0.001, mini_batch_size = 64, beta = 0.9,
           beta1 = 0.9, beta2 = 0.999,  epsilon = 1e-8, num_epochs = 10000, 
-          keep_prob = 0.9, print_cost = True, pourcentageStop = 0.1, cost_mode = 'SEL', log = True):
+          keep_prob = 0.98, print_cost = True, pourcentageStop = 0.1,
+          cost_mode = 'XC', log = True, verbose = False):
     """
     Modelize the designed CNN.
     
@@ -881,14 +905,16 @@ def train_CNN(X, Y, layers, learning_rate = 0.7, mini_batch_size = 64, beta = 0.
     x = []
     fpa_cache = []
     deg = 4
+    line1=[]
     
+    x_vec = np.linspace(0,100,101)[0:-1]
+    y_vec = np.zeros(len(x_vec))
+    uty = []
     # Optimization loop
     for i in range(num_epochs):
-        
+        cost_total = []
         seed = seed + 1
         minibatches = random_mini_batches(X, Y, mini_batch_size, seed)
-        cost_total = 0
-        
         # Select a minibatch
         for minibatch in minibatches:
             cache = {}
@@ -897,14 +923,15 @@ def train_CNN(X, Y, layers, learning_rate = 0.7, mini_batch_size = 64, beta = 0.
             cache["A0"] = minibatch_X
             
             # Forward propagation
-            print("----------Forward prop----------")
+            if (verbose):
+                print("----------Forward prop----------")
             for l in range(1, len(layers)):
                 if(layers[l][0] == 'conv'):
                     start = timer()
                     cache["A"+str(l)] = forward_conv(cache["A"+str(l-1)], 
                                                      parameters["W"+str(l)], 
                                      parameters["beta"+str(l)], 
-                                     layers[l][1][3],  layers[l][1][4])
+                                     layers[l][1][3],  layers[l][1][4], layers[l][2])
                     tim[0] = tim[0] + timer()-start 
                 if(layers[l][0] == 'pool'):
                     start = timer()
@@ -920,35 +947,45 @@ def train_CNN(X, Y, layers, learning_rate = 0.7, mini_batch_size = 64, beta = 0.
                         parameters["beta"+str(l)], layers[l][2], keep_prob)
                     tim[2] = tim[2] + timer()-start
                 if(layers[l][0] == 'flatten'):
-                    cache["A"+str(l)] = cp.reshape(cache["A"+str(l-1)], 
+                    cache["A"+str(l)] = cp.reshape(cache["A"+str(l-1)].T, 
                                    (cache["A"+str(l-1)].shape[1]*
                                     cache["A"+str(l-1)].shape[2]*
                                     cache["A"+str(l-1)].shape[3],
                                     cache["A"+str(l-1)].shape[0]))
                     cache["D"+str(l)] = cp.ones(cache["A"+str(l)].shape)
-                print("A%d: %s" %(l, str(cache["A"+str(l)].shape)))
+                if (verbose):
+                    print("A%d: %s" %(l, str(cache["A"+str(l)].shape)))
                 
             
             # Compute cost and add to the cost total
-            print("----------Cost computation----------")
+            if (verbose):
+                print("----------Cost computation----------")
             costs, cache["dA"+str(L+1)] = cost(cache["A"+str(L)],
                                                 minibatch_Y, cost_mode)
             
-            cost_total += cp.sum(abs(costs))
-            print("Cost: %f" %(cost_total))
-            
-            
+            cost_total.append(np.sum(abs(cp.asnumpy(costs))))
+            if(i % 100 == 0):
+                glob = cp.minimum(abs(parameters["W1"][:, :, :, 1]), 1)
+                uty.append(cp.asnumpy(parameters["W1"][:, :, :, 1]))
+            print("weights: %f" %(cp.sum(abs(parameters["W1"]))))
+            u1 = cp.argmax(cache["A"+str(L)], axis=0)
+            u2 = cp.argmax(minibatch_Y, axis=0)
+            u = (u1==u2)
+            if (verbose):
+                print(cp.sum(u)/64)
 
             # Backward propagation
-            print("----------Bacward prop----------")
+            if (verbose):
+                print("----------Bacward prop----------")
             for l in reversed(range(1, len(layers))):
-                print("dA%d: %s" %(l+1, str(cache["dA"+str(l+1)].shape)))
+                if (verbose):
+                    print("dA%d: %s" %(l+1, str(cache["dA"+str(l+1)].shape)))
                 if(layers[l][0] == 'conv'):
                     start = timer()
                     cache["dA"+str(l)], cache["dW"+str(l)], cache["dbeta"+str(l)] = backward_conv(cache["dA"+str(l+1)],
                                 cache["A"+str(l-1)], parameters["W"+str(l)], 
                                 parameters["beta"+str(l)], 
-                                layers[l][1][3],  layers[l][1][4])
+                                layers[l][1][3],  layers[l][1][4], layers[l][2])
                     tim[3] = tim[3] + timer()-start
                 if(layers[l][0] == 'pool'):
                     start = timer()
@@ -966,22 +1003,25 @@ def train_CNN(X, Y, layers, learning_rate = 0.7, mini_batch_size = 64, beta = 0.
                         parameters["sigma"+str(l)], layers[l][2], keep_prob)
                     tim[5] = tim[5] + timer()-start
                 if(layers[l][0] == 'flatten'):
-                    cache["dA"+str(l)] = cp.reshape(cache["dA"+str(l+1)], 
+                    cache["dA"+str(l)] = cp.reshape(cache["dA"+str(l+1)].T, 
                                    cache["A"+str(l-1)].shape)
-                
-            print("----------Time spent----------")
-            print("forward conv: %f" %(tim[0]))
-            print("forward pool: %f" %(tim[1]))
-            print("forward dense: %f" %(tim[2]))
-            print("backward conv: %f" %(tim[3]))
-            print("backward pool: %f" %(tim[4]))
-            print("backward dense: %f" %(tim[5]))
+            
+            if (verbose):
+                print("----------Time spent----------")
+                print("forward conv: %f" %(tim[0]))
+                print("forward pool: %f" %(tim[1]))
+                print("forward dense: %f" %(tim[2]))
+                print("backward conv: %f" %(tim[3]))
+                print("backward pool: %f" %(tim[4]))
+                print("backward dense: %f" %(tim[5]))
             
             # Update parameters
-            t = t + 1 # Adam counter
-            print("----------Optimisation----------")
+            t += 1 # Adam counter
+            if (verbose):
+                print("----------Optimisation----------")
             for l in range(1, len(layers)):
-                print("layer: %d" %(l))
+                if (verbose):
+                    print("layer: %d" %(l))
                 if(layers[l][0] == 'conv'):
                     parameters["W"+str(l)], parameters["beta"+str(l)], adam["vdW"+str(l)], adam["vdbeta"+str(l)], adam["sdW"+str(l)], adam["sdbeta"+str(l)] = update_parameters_with_adam_conv(parameters["W"+str(l)], 
                                  parameters["beta"+str(l)], cache["dW"+str(l)], 
@@ -998,13 +1038,20 @@ def train_CNN(X, Y, layers, learning_rate = 0.7, mini_batch_size = 64, beta = 0.
                                 adam["sdW"+str(l)], adam["sdgamma"+str(l)],
                                 adam["sdbeta"+str(l)], t, learning_rate, 
                                 beta1, beta2, epsilon)
-          
+        if print_cost and i % 100 == 0:
+            y_vec[-1] = np.sum(cost_total)/len(cost_total)
+            line1 = Display.computationFollowUp(x_vec, y_vec,line1, 'Cost function')
+            y_vec = np.append(y_vec[1:],0.0)
+        if(i%10000 == 0):
+            a=1
+        
+        '''
         # Break if cost derivative trend is flat
         if log:
             cost_avg = np.log10(1+(cost_total / m))
         else:
             cost_avg = cost_total / m
-        
+        '''
         '''
         # Print the cost every 1000 epoch
         if print_cost and i % 1000 == 0:
@@ -1031,8 +1078,6 @@ def train_CNN(X, Y, layers, learning_rate = 0.7, mini_batch_size = 64, beta = 0.
     plt.close
 '''
     return parameters
-   
-X = cp.random.rand(1000, 28, 28, 3)
-Y = cp.random.rand(10, 1000)
-
+ 
+X, Y = DataCreator.genRecogBase(37, (28, 28, 3))
 train_CNN(X, Y, LeNet)
