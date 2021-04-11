@@ -279,7 +279,8 @@ def forward_function(A_previous, W, mu, sigma, gamma, beta, function, dropout = 
             
     return A, z, zhat, Z, mu, sigma, D
 
-def forward_conv(A_previous, Filter, Bias, pad, stride, function = 'identity'):
+def forward_conv(A_previous, Filter, Bias, pad, stride, 
+                 function = 'identity', verbose = False):
     '''
     A forward convolution step.
     Calcul output shape : ((x-f+2*pad)/stride)+1
@@ -310,7 +311,7 @@ def forward_conv(A_previous, Filter, Bias, pad, stride, function = 'identity'):
     
     mu = cp.mean(Filter)
     s = cp.std(Filter)
-    Filter = (Filter-mu)/s
+    Filter = (Filter-mu)/(s+1e-5)
     
     n_H = int(((n_H_prev-f+2*pad)/stride)+1)
     n_W = int(((n_W_prev-f+2*pad)/stride)+1)
@@ -330,8 +331,18 @@ def forward_conv(A_previous, Filter, Bias, pad, stride, function = 'identity'):
     weights = cp.reshape(Filter, (f**2, n_C_prev, n_C))
     conV = cp.tensordot(weights, Ztest, ((0, 1), (1, 3)))
     Z = cp.reshape(cp.transpose(conV, (1, 2, 0)), (m, n_H, n_W, n_C)) + Bias
-    
     Z = activation('forward', function, Z)
+    if(verbose):
+        print("Filter :")
+        print(Filter)
+        print("Weights :")
+        print(weights)
+        print("Z :")
+        print(Ztest)
+        print("Conv :")
+        print(conV)
+        print("Result :")
+        print(Z)
     '''
     for i in range(m):               
         a_prev_pad = A_prev_pad[i, :, :, :]             
@@ -1079,5 +1090,5 @@ def train_CNN(X, Y, layers, learning_rate = 0.001, mini_batch_size = 64, beta = 
 '''
     return parameters
  
-X, Y = DataCreator.genRecogBase(37, (28, 28, 3))
-train_CNN(X, Y, LeNet)
+'''X, Y = DataCreator.genRecogBase(37, (28, 28, 3))
+train_CNN(X, Y, LeNet)'''
